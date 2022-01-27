@@ -1,12 +1,17 @@
 const express = require('express')
 const bodyParser = require('body-parser');
 const cors = require('cors');
-require('dotenv').config();
+require("dotenv").config();
 const { MongoClient, ObjectId } = require('mongodb');
+const uuid = require('uuid').v4;
+const Stripe = require('stripe');
+const stripe = Stripe(process.env.secret_Ket);
+// const stripe = require('stripe')(process.env.secret_Ket)
 
 
 const app = express();
 app.use(cors());
+// app.use(bodyParser.urlencoded({extended : false}));
 app.use(bodyParser.json());
 const port = process.env.PORT || 5000;
 
@@ -28,8 +33,9 @@ client.connect(err => {
   })
 
   // Add Course booking
-  app.post('/addCourse', (req, res) => {
+  app.post('/addBooking', (req, res) => {
     const bookingCourse = req.body;
+    console.log(bookingCourse);
     bookingCollection.insertOne(bookingCourse)
     .then(result=>{
       res.send(result.acknowledged === true );
@@ -78,21 +84,6 @@ client.connect(err => {
       })
   });
 
-
-  // app.put('/update', async(req, res) => {
-  //   const status = req.body.status;
-  //   const filter = {courseInfo : {status:status}}
-  //   const updateDoc = {
-  //     $set: {
-  //       courseInfo : {status:status}
-  //     },
-  //   }; 
-  //   const result = await bookingCollection.updateOne(filter, updateDoc);
-  //   console.log(result);
-  // })
-
-
-// Load All Course Service
   app.get('/allService', (req, res) => {
     serviceCollection.find({})
     .toArray((err , documents)=>{
@@ -140,6 +131,49 @@ app.get('/allBooking', (req, res) => {
 
 app.get('/', (req, res) => {
   res.send('Hello World!')
+});
+
+app.post('/checkout', async (req, res) => {
+  console.log("request", req.body);
+
+  let error;
+  let status;
+  try{
+    const {token, course} = req.body;
+    const customer = await stripe.customers.create({
+            email: token.email,
+            source: token.id,
+    });
+
+    const idempotency_key = uuid();
+    const charge = await stripe.charges.create({
+      amount: course.price * 100,
+      currency: "usd",
+      customer: customer.id,
+      receipt_email: token.email,
+      description: `Purchased the ${course.title}`,
+      shipping:{
+        name: token.card.name,
+        address: {
+          line1 : token.card.address_line1,
+          line2 : token.card.address_line2,
+          city: token.card.address_city,
+          country: token.card.address_country,
+          postal_code: token.card.address_zip
+        }
+      }
+    }, 
+    {
+      idempotency_key,
+    }
+    );
+    console.log("Charge :", charge);
+    status = "success";
+  }catch(error){
+    console.log("error", error)
+    status = "failure"
+  }
+  res.json({error, status});
 })
 
 app.listen(port);
