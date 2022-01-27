@@ -133,6 +133,7 @@ app.get('/', (req, res) => {
   res.send('Hello World!')
 });
 
+// stripe payment section
 app.post('/checkout', async (req, res) => {
   console.log("request", req.body);
 
